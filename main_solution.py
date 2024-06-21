@@ -104,16 +104,16 @@ hero.y_velocity = 0
 @play.repeat_forever
 def controls():
     """Handles all player movement, run every frame"""
-    if play.key_is_pressed('d'):
+    if play.key_is_pressed('d') or play.key_is_pressed('right'):
         hero.x += 10
         hero.image = hero_images[1]
-        if check_collision():
+        if check_collision():  # if the movement has caused a collision, undo it
             hero.x -= 10
 
-    if play.key_is_pressed('a'):
+    if play.key_is_pressed('a') or play.key_is_pressed('left'):
         hero.x -= 10
         hero.image = hero_images[0]
-        if check_collision():
+        if check_collision():  # if the movement has caused a collision, undo it
             hero.x += 10
 
     if play.key_is_pressed('space') and not hero.jump_debounce and hero.touching_ground:
@@ -128,14 +128,13 @@ def controls():
 def do_physics():
     # adjust y to account for velocity, and adjust velocity to simulate falling
 
-    if not hero.touching_ground:
-        hero.y_velocity = max(-10, hero.y_velocity - 2)  # terminal velocity prevents clipping
-    elif hero.y_velocity < 0:
-        hero.y_velocity = 0
+    if not hero.touching_ground:  # simulate gravity
+        hero.y_velocity -= 2
+        hero.y_velocity = max(-10, hero.y_velocity)  # terminal velocity prevents clipping
 
     hero.y = hero.y + hero.y_velocity
     if check_collision():
-        hero.y = hero.y - hero.y_velocity
+        hero.y = hero.y - hero.y_velocity  # if the movement has caused a collision, undo it and set velocity to zero
         hero.y_velocity = 0
         hero.touching_ground = True
     else:
@@ -146,13 +145,15 @@ def do_physics():
 
 
 def restart_game():
-    """resets the view, sends the user back to the initial position"""
+    """Resets the view, sends the user back to the initial position"""
     hero.x = 0
     hero.y = 0
     game.end_index = game.viewbox_length
     game.start_index = 0
     game.start_x = 0
     game.end_x = 0
+
+    # clear all loaded boxes
     for row in boxes:
         for box in row:
             if box is not None:
@@ -163,7 +164,7 @@ def restart_game():
 
 
 def check_collision():
-    # check if the player is touching any box on the screen
+    """Check if the player is touching any box on the screen"""
     for box_row in boxes:
         for box in box_row:
             if box is not None and box.can_collide and hero.is_touching(box):
@@ -190,6 +191,7 @@ def move_background(x):
             if box is not None:
                 box.x += x
 
+    # these need to be updated so the program knows where to draw new boxes
     game.start_x += x
     game.end_x += x
 
