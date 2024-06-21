@@ -1,25 +1,26 @@
 import play
 import csv
 import pygame
+import pygame
 
-data = []
+level_data = []  # defines the boxes in the format of a 2D list
 
 
 def load_level_data(name):
-    global data
+    global level_data
     with open(name, newline='') as csvfile:
-        data = list(csv.reader(csvfile))
+        level_data = list(csv.reader(csvfile))
 
 
 game = play.new_image("background.png", size=84)
 level_files = ["platform.csv", "platform_2.csv"]
 boxes = []
 game.start_index = 0
-game.viewbox_length = 55
-game.end_index = game.viewbox_length
-game.start_x = 0
-game.end_x = 0
-game.level_index = 0
+game.viewbox_length = 55  # number of boxes loaded at a time
+game.end_index = game.viewbox_length  # data index for the last column of blocks loaded
+game.start_x = 0  # x position of the first column of blocks loaded
+game.end_x = 0  # x position of the last column of blocks loaded
+game.level_index = 0  # which level the player is on
 
 load_level_data(level_files[game.level_index])
 
@@ -27,10 +28,11 @@ hero_images = ["pony_left.png", "pony_right.png"]
 hero = play.new_image(hero_images[1], x=0, y=0, size=16)
 hero.y_velocity = 0
 
-game.win_box = None
+game.win_box = None  # step on this, win the game
 
 
 def place_box(type, x, row_i):
+    """Draw a box on the screen"""
     type = int(type)
     y = 300 + 20 - (20 * row_i)
     if type == 1:
@@ -52,7 +54,7 @@ def place_box(type, x, row_i):
     elif type == 4:
         # when the player touches this block, game goes to the next level
         box = play.new_box(x=x, y=y, width=24, height=24, color='blue')
-        box.can_collide = True
+        box.can_collide = False
         box.type = 4
         game.win_box = box
         return box
@@ -60,9 +62,9 @@ def place_box(type, x, row_i):
         return None
 
 
-# check if the player has hit the win box
 @play.repeat_forever
 async def check_win_box():
+    """check if the player has hit the win box, if so go to the next level"""
     if game.win_box is not None and hero.is_touching(game.win_box):
         game.win_box = None
         game.level_index += 1
@@ -78,9 +80,10 @@ async def check_win_box():
         win_text.remove()
 
 
-def draw_initial_background():
-    for i in range(0, len(data)):
-        row = data[i]
+def draw_initial_level():
+    """Draw the initial boxes in view"""
+    for i in range(0, len(level_data)):
+        row = level_data[i]
         boxes.append([])
         for j in range(0, game.end_index):
             type = row[j]
@@ -90,20 +93,30 @@ def draw_initial_background():
         game.end_x = -400 - 20 + (20 * game.end_index-1)
         game.start_x = -400 - 20
 
-draw_initial_background()
 
-hero.jump_debounce = False
+draw_initial_level()  # initial setup
+
+hero.jump_debounce = False  # prevents infinite jumping
+hero.touching_ground = False
+hero.y_velocity = 0
+
+
 @play.repeat_forever
 def controls():
-    if play.key_is_pressed('right') and not check_wall_collision(1):
+    """Handles all player movement, run every frame"""
+    if play.key_is_pressed('d'):
         hero.x += 10
         hero.image = hero_images[1]
+        if check_collision():
+            hero.x -= 10
 
-    if play.key_is_pressed('left') and not check_wall_collision(-1):
+    if play.key_is_pressed('a'):
         hero.x -= 10
         hero.image = hero_images[0]
+        if check_collision():
+            hero.x += 10
 
-    if play.key_is_pressed('space') and not hero.jump_debounce and check_ground_collision():
+    if play.key_is_pressed('space') and not hero.jump_debounce and hero.touching_ground:
         hero.y_velocity = 20
         hero.jump_debounce = True
     elif not play.key_is_pressed('space'):
@@ -111,28 +124,29 @@ def controls():
         hero.jump_debounce = False
 
 
-hero.touching_ground = False
-hero.y_velocity = 0
-
 @play.repeat_forever
 def do_physics():
     # adjust y to account for velocity, and adjust velocity to simulate falling
-    hero.touching_ground = check_ground_collision()
 
     if not hero.touching_ground:
-        # hero.y_velocity -= 2
-        hero.y_velocity = max(-10, hero.y_velocity - 2)
+        hero.y_velocity = max(-10, hero.y_velocity - 2)  # terminal velocity prevents clipping
     elif hero.y_velocity < 0:
         hero.y_velocity = 0
 
     hero.y = hero.y + hero.y_velocity
+    if check_collision():
+        hero.y = hero.y - hero.y_velocity
+        hero.y_velocity = 0
+        hero.touching_ground = True
+    else:
+        hero.touching_ground = False
 
-    if hero.y < -350:
+    if hero.y < -350:  # player fell out of the world :(
         restart_game()
 
 
 def restart_game():
-    # resets the board, sends the user back to the initial position
+    """resets the view, sends the user back to the initial position"""
     hero.x = 0
     hero.y = 0
     game.end_index = game.viewbox_length
@@ -145,32 +159,21 @@ def restart_game():
                 box.remove()
 
     boxes.clear()
-    draw_initial_background()
+    draw_initial_level()
 
 
-def check_ground_collision():
-    # check if the player is touching the top of any box on the screen
+def check_collision():
+    # check if the player is touching any box on the screen
     for box_row in boxes:
         for box in box_row:
-            if box is not None and box.can_collide and hero.is_touching(box) and hero.bottom > box.bottom:
+            if box is not None and box.can_collide and hero.is_touching(box):
                 return True
     return False
 
 
-def check_wall_collision(x_dir):
-    # check if the player is touching the top of any box on the screen
-    for box_row in boxes:
-        for box in box_row:
-            if box is not None and box.can_collide and hero.is_touching(box) and not hero.bottom + 10 > box.top:
-                if x_dir == 1 and hero.right > box.left and abs(hero.left - box.right) > 10:
-                    return True
-                elif x_dir == -1 and hero.left < box.right and abs(hero.right - box.left) > 10:
-                    return True
-    return False
-
 @play.repeat_forever
 def update_background_pos():
-    # check if we need to move the background to match the player's position
+    """Check if the player has moved too far in either direction, and move the background as needed"""
     if hero.x > 140:
         move_background(-10)
         hero.x -= 10
@@ -181,6 +184,7 @@ def update_background_pos():
 
 
 def move_background(x):
+    """Moves the background by x, unloading old boxes and loading new ones as needed"""
     for box_row in boxes:
         for box in box_row:
             if box is not None:
@@ -193,14 +197,14 @@ def move_background(x):
     # that are soon to be visible
 
     # background moving left
-    if x > 0 and game.end_x > 480:
+    if x > 0 and game.end_x > 440:
         if game.start_index > 1:
             game.start_index -= 1
             game.end_index -= 1
             for i in range(0, len(boxes)):
                 # get next box to the left, then add it to leftmost position
                 row = boxes[i]
-                type = data[i][game.start_index]
+                type = level_data[i][game.start_index]
                 box = place_box(type, game.start_x - 20, i)
                 row.insert(0, box)
 
@@ -213,14 +217,14 @@ def move_background(x):
             game.end_x -= 20
 
     # background moving right
-    if x < 0 and game.start_x < -480:
-        if game.end_index < len(data[0]) - 1:
+    if x < 0 and game.start_x < -440:
+        if game.end_index < len(level_data[0]) - 1:
             game.start_index += 1
             game.end_index += 1
             for i in range(0, len(boxes)):
                 # get next box to right, add it to rightmost position
                 row = boxes[i]
-                type = data[i][game.end_index]
+                type = level_data[i][game.end_index]
                 box = place_box(type, game.end_x, i)
                 row.append(box)
 
@@ -231,5 +235,6 @@ def move_background(x):
 
             game.start_x += 20
             game.end_x += 20
+
 
 play.start_program()
